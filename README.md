@@ -6,7 +6,7 @@
 
 ## IP质量体检脚本  -  [IP Quality Check Script (EN)](https://github.com/xykt/IPQuality/blob/main/README_EN.md)
 
-**支持OS/Platform：Ubuntu | Debian | Linux Mint | Fedora | Red Hat Enterprise Linux (RHEL) | CentOS | Arch Linux | Manjaro | Alpine Linux | AlmaLinux | Rocky Linux | macOS | Anolis OS | Alibaba Cloud Linux | SUSE Linux | openSUSE | Void Linux | Windows (via Docker)**
+**支持OS/Platform：Ubuntu | Debian | Linux Mint | Fedora | Red Hat Enterprise Linux (RHEL) | CentOS | Arch Linux | Manjaro | Alpine Linux | AlmaLinux | Rocky Linux | macOS | Anolis OS | Alibaba Cloud Linux | SUSE Linux | openSUSE | Void Linux | Windows (via Docker / PowerShell)**
 
 - 中英文双语言支持
 - 支持IPv4/IPv6双栈查询
@@ -31,6 +31,13 @@
 ````bash
 bash <(curl -Ls https://Check.Place) -I
 ````
+
+##### Windows PowerShell：
+````pwsh
+pwsh -NoLogo -File ./ip.ps1
+````
+
+> 可选参数：`-IPv4/-IPv6` 仅检测单栈、`-Address` 指定检测的IP、`-Proxy` 设置代理、`-Json` 输出JSON、`-Output` 输出文件、`-Quiet` 静默模式。
 
 ##### Docker：
 - Linux

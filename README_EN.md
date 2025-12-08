@@ -6,7 +6,7 @@
 
 ## IP Quality Check Script  -  [IP质量体检脚本 (中文)](https://github.com/xykt/IPQuality/blob/main/README.md)
 
-**Supported OS/Platform: Ubuntu | Debian | Linux Mint | Fedora | Red Hat Enterprise Linux (RHEL) | CentOS | Arch Linux | Manjaro | Alpine Linux | AlmaLinux | Rocky Linux | macOS | Anolis OS | Alibaba Cloud Linux | SUSE Linux | openSUSE | Void Linux | Windows (via Docker)**
+**Supported OS/Platform: Ubuntu | Debian | Linux Mint | Fedora | Red Hat Enterprise Linux (RHEL) | CentOS | Arch Linux | Manjaro | Alpine Linux | AlmaLinux | Rocky Linux | macOS | Anolis OS | Alibaba Cloud Linux | SUSE Linux | openSUSE | Void Linux | Windows (via Docker / PowerShell)**
 
 - Bilingual support in English and Chinese
 - Supports dual-stack queries for IPv4/IPv6
@@ -31,6 +31,13 @@
 ````bash
 bash <(curl -Ls https://Check.Place) -EI
 ````
+
+##### Windows PowerShell:
+````pwsh
+pwsh -NoLogo -File ./ip.ps1
+````
+
+> Optional parameters: `-IPv4/-IPv6` single-stack lookup, `-Address` fixed target, `-Proxy` outbound proxy, `-Json` JSON output, `-Output` file path, `-Quiet` suppress console output.
 
 ##### Docker:
 - Linux
