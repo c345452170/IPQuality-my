@@ -23,10 +23,11 @@
 .EXAMPLE
     pwsh ./ip.ps1 -IPv4 -Proxy "http://user:pass@127.0.0.1:8080" -Json
 #>
+[CmdletBinding()]
 param(
     [switch]$IPv4,
     [switch]$IPv6,
-    [string]$Address,
+    [string[]]$Address,
     [string]$Proxy,
     [switch]$Json,
     [string]$Output,
@@ -49,13 +50,52 @@ function Invoke-Http {
     }
 }
 
+function Invoke-IpEndpoint {
+    param(
+        [Parameter(Mandatory)] [hashtable]$Endpoint
+    )
+
+    $response = Invoke-Http -Uri $Endpoint.Uri
+    if (-not $response) { return $null }
+
+    if ($Endpoint.Property) {
+        return $response.$($Endpoint.Property)
+    }
+
+    return $response
+}
+
 function Get-PublicIP {
     param(
         [Parameter(Mandatory)] [ValidateSet('4','6')] [string]$Family
     )
-    $endpoint = if ($Family -eq '6') { 'https://api64.ipify.org?format=json' } else { 'https://api.ipify.org?format=json' }
-    $result = Invoke-Http -Uri $endpoint
-    return $result?.ip
+
+    $ipv4Endpoints = @(
+        @{ Uri = 'https://api.ipify.org?format=json'; Property = 'ip' },
+        @{ Uri = 'https://ip.sb/json'; Property = 'ip' },
+        @{ Uri = 'https://ifconfig.me/all.json'; Property = 'ip_addr' },
+        @{ Uri = 'https://ipv4.icanhazip.com'; Property = $null }
+    )
+
+    $ipv6Endpoints = @(
+        @{ Uri = 'https://api64.ipify.org?format=json'; Property = 'ip' },
+        @{ Uri = 'https://6.ip.sb/json'; Property = 'ip' },
+        @{ Uri = 'https://ifconfig.me/all.json'; Property = 'ip_addr' },
+        @{ Uri = 'https://ipv6.icanhazip.com'; Property = $null }
+    )
+
+    $endpoints = if ($Family -eq '6') { $ipv6Endpoints } else { $ipv4Endpoints }
+
+    foreach ($endpoint in $endpoints) {
+        $ip = Invoke-IpEndpoint -Endpoint $endpoint
+        if ([string]::IsNullOrWhiteSpace($ip)) { continue }
+
+        $trimmed = $ip.Trim()
+        if ($Family -eq '6' -and $trimmed -match ':') { return $trimmed }
+        if ($Family -eq '4' -and $trimmed -match '\.') { return $trimmed }
+    }
+
+    return $null
 }
 
 function Get-IpapiProfile {
@@ -113,9 +153,12 @@ function Get-IpwhoisProfile {
 }
 
 function Resolve-IPTargets {
-    if ($Address) { return @($Address) }
+    if ($Address) {
+        return $Address | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    }
 
     $targets = @()
+
     if (-not $IPv6) {
         $ipv4 = Get-PublicIP -Family '4'
         if ($ipv4) { $targets += $ipv4 }
@@ -125,7 +168,7 @@ function Resolve-IPTargets {
         if ($ipv6) { $targets += $ipv6 }
     }
 
-    return $targets
+    return $targets | Select-Object -Unique
 }
 
 function Collect-IPProfile {
@@ -186,7 +229,8 @@ function Format-ProfileTable {
 
 $targets = Resolve-IPTargets
 if (-not $targets) {
-    Write-Warning 'No public IP address could be determined. Specify -Address to force a lookup.'
+    Write-Warning '无法自动检测到公网 IP。请确认网络连通性，或使用 -Address 手动指定地址。'
+    Write-Host "提示：在代理环境下可使用 -Proxy http://user:pass@host:port 指定代理；若只想检测 IPv4 或 IPv6，可分别附加 -IPv4 或 -IPv6。" -ForegroundColor Yellow
     exit 1
 }
 
