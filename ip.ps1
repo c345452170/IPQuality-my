@@ -196,7 +196,12 @@ function Format-ProfileTable {
     function Format-BoolLabel {
         param($Value)
         if ($Value -eq $null) { return '未知' }
-        if ($Value -is [bool]) { return ($Value) ? '是' : '否' }
+        if ($Value -is [bool]) {
+            if ($Value) {
+                return '是'
+            }
+            return '否'
+        }
         return [string]$Value
     }
 
