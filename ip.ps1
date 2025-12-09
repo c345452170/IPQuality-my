@@ -23,10 +23,11 @@
 .EXAMPLE
     pwsh ./ip.ps1 -IPv4 -Proxy "http://user:pass@127.0.0.1:8080" -Json
 #>
+[CmdletBinding()]
 param(
     [switch]$IPv4,
     [switch]$IPv6,
-    [string]$Address,
+    [string[]]$Address,
     [string]$Proxy,
     [switch]$Json,
     [string]$Output,
@@ -49,13 +50,52 @@ function Invoke-Http {
     }
 }
 
+function Invoke-IpEndpoint {
+    param(
+        [Parameter(Mandatory)] [hashtable]$Endpoint
+    )
+
+    $response = Invoke-Http -Uri $Endpoint.Uri
+    if (-not $response) { return $null }
+
+    if ($Endpoint.Property) {
+        return $response.$($Endpoint.Property)
+    }
+
+    return $response
+}
+
 function Get-PublicIP {
     param(
         [Parameter(Mandatory)] [ValidateSet('4','6')] [string]$Family
     )
-    $endpoint = if ($Family -eq '6') { 'https://api64.ipify.org?format=json' } else { 'https://api.ipify.org?format=json' }
-    $result = Invoke-Http -Uri $endpoint
-    return $result?.ip
+
+    $ipv4Endpoints = @(
+        @{ Uri = 'https://api.ipify.org?format=json'; Property = 'ip' },
+        @{ Uri = 'https://ip.sb/json'; Property = 'ip' },
+        @{ Uri = 'https://ifconfig.me/all.json'; Property = 'ip_addr' },
+        @{ Uri = 'https://ipv4.icanhazip.com'; Property = $null }
+    )
+
+    $ipv6Endpoints = @(
+        @{ Uri = 'https://api64.ipify.org?format=json'; Property = 'ip' },
+        @{ Uri = 'https://6.ip.sb/json'; Property = 'ip' },
+        @{ Uri = 'https://ifconfig.me/all.json'; Property = 'ip_addr' },
+        @{ Uri = 'https://ipv6.icanhazip.com'; Property = $null }
+    )
+
+    $endpoints = if ($Family -eq '6') { $ipv6Endpoints } else { $ipv4Endpoints }
+
+    foreach ($endpoint in $endpoints) {
+        $ip = Invoke-IpEndpoint -Endpoint $endpoint
+        if ([string]::IsNullOrWhiteSpace($ip)) { continue }
+
+        $trimmed = $ip.Trim()
+        if ($Family -eq '6' -and $trimmed -match ':') { return $trimmed }
+        if ($Family -eq '4' -and $trimmed -match '\.') { return $trimmed }
+    }
+
+    return $null
 }
 
 function Get-IpapiProfile {
@@ -113,9 +153,12 @@ function Get-IpwhoisProfile {
 }
 
 function Resolve-IPTargets {
-    if ($Address) { return @($Address) }
+    if ($Address) {
+        return $Address | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    }
 
     $targets = @()
+
     if (-not $IPv6) {
         $ipv4 = Get-PublicIP -Family '4'
         if ($ipv4) { $targets += $ipv4 }
@@ -125,7 +168,7 @@ function Resolve-IPTargets {
         if ($ipv6) { $targets += $ipv6 }
     }
 
-    return $targets
+    return $targets | Select-Object -Unique
 }
 
 function Collect-IPProfile {
@@ -138,8 +181,8 @@ function Collect-IPProfile {
     }
 
     $sources = @(
-        Get-IpapiProfile -IP $IP,
-        Get-IpinfoProfile -IP $IP,
+        Get-IpapiProfile -IP $IP
+        Get-IpinfoProfile -IP $IP
         Get-IpwhoisProfile -IP $IP
     ) | Where-Object { $_ }
 
@@ -150,43 +193,69 @@ function Collect-IPProfile {
 function Format-ProfileTable {
     param([hashtable]$Profile)
 
+    function Format-BoolLabel {
+        param($Value)
+        if ($Value -eq $null) { return '未知' }
+        if ($Value -is [bool]) { return ($Value) ? '是' : '否' }
+        return [string]$Value
+    }
+
+    function Join-LocationParts {
+        param($Country,$Region,$City)
+        $parts = @()
+        if ($Country) { $parts += $Country }
+        if ($Region)  { $parts += $Region }
+        if ($City)    { $parts += $City }
+        if (-not $parts) { return '未知' }
+        return ($parts -join ' / ')
+    }
+
     $lines = @()
-    $lines += ('=' * 60)
-    $lines += "IP: {0}" -f $Profile.Address
-    $lines += "Time: {0}" -f $Profile.Timestamp
-    $lines += ('-' * 60)
+    $lines += ('═' * 66)
+    $lines += "公网 IP 画像： {0}" -f $Profile.Address
+    $lines += "报告时间：   {0}" -f $Profile.Timestamp
+    $lines += ('-' * 66)
 
     foreach ($src in $Profile.Sources) {
-        $lines += "[{0}]" -f $src.Provider
-        $lines += "  Country : {0}" -f ($src.Country -join ', ')
-        if ($src.Region)    { $lines += "  Region  : $($src.Region)" }
-        if ($src.City)      { $lines += "  City    : $($src.City)" }
-        if ($src.ASN)       { $lines += "  ASN/ISP : $($src.ASN)" }
-        if ($src.ISP -and -not $src.ASN) { $lines += "  ISP     : $($src.ISP)" }
-        if ($src.Location)  { $lines += "  Geo     : $($src.Location)" }
-        if ($src.Latitude -and $src.Longitude) {
-            $lines += "  Geo     : $($src.Latitude), $($src.Longitude)"
+        $lines += "[数据源] $($src.Provider)"
+
+        $location = Join-LocationParts -Country $src.Country -Region $src.Region -City $src.City
+        $lines += "  归属地    ： $location"
+
+        if ($src.ASN) {
+            $lines += "  ASN/ISP  ： $($src.ASN)"
+        } elseif ($src.ISP) {
+            $lines += "  运营商   ： $($src.ISP)"
         }
-        if ($src.Type)      { $lines += "  Type    : $($src.Type)" }
-        if ($src.Security)  { $lines += "  Security: $($src.Security)" }
-        if ($src.Risk)      { $lines += "  Risk    : $($src.Risk)" }
-        if ($src.RiskScore) { $lines += "  Risk    : $($src.RiskScore)" }
-        if ($src.VPN -ne $null) { $lines += "  VPN     : $($src.VPN)" }
-        if ($src.Proxy -ne $null) { $lines += "  Proxy   : $($src.Proxy)" }
-        if ($src.Hosting -ne $null) { $lines += "  Hosting : $($src.Hosting)" }
-        if ($src.Threats)   { $lines += "  Threats : $($src.Threats)" }
-        $lines += ('-' * 60)
+
+        if ($src.Location) {
+            $lines += "  经纬度    ： $($src.Location)"
+        } elseif ($src.Latitude -and $src.Longitude) {
+            $lines += "  经纬度    ： $($src.Latitude), $($src.Longitude)"
+        }
+
+        if ($src.Type)      { $lines += "  地址类型  ： $($src.Type)" }
+        if ($src.Security)  { $lines += "  安全标签  ： $($src.Security)" }
+        if ($src.Risk)      { $lines += "  风险等级  ： $($src.Risk)" }
+        if ($src.RiskScore) { $lines += "  风险分数  ： $($src.RiskScore)" }
+        if ($src.VPN -ne $null) { $lines += "  VPN 检测 ： $(Format-BoolLabel -Value $src.VPN)" }
+        if ($src.Proxy -ne $null) { $lines += "  代理检测 ： $(Format-BoolLabel -Value $src.Proxy)" }
+        if ($src.Hosting -ne $null) { $lines += "  数据中心 ： $(Format-BoolLabel -Value $src.Hosting)" }
+        if ($src.Threats)   { $lines += "  威胁情报  ： $($src.Threats)" }
+
+        $lines += ('-' * 66)
     }
 
     if (-not $Profile.Sources) {
-        $lines += "No data sources responded. Check your connectivity or proxy settings."
+        $lines += "未能从任何数据源获取信息，请检查网络或代理配置。"
     }
     return $lines -join [Environment]::NewLine
 }
 
 $targets = Resolve-IPTargets
 if (-not $targets) {
-    Write-Warning 'No public IP address could be determined. Specify -Address to force a lookup.'
+    Write-Warning '无法自动检测到公网 IP。请确认网络连通性，或使用 -Address 手动指定地址。'
+    Write-Host "提示：在代理环境下可使用 -Proxy http://user:pass@host:port 指定代理；若只想检测 IPv4 或 IPv6，可分别附加 -IPv4 或 -IPv6。" -ForegroundColor Yellow
     exit 1
 }
 
