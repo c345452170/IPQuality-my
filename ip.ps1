@@ -181,8 +181,8 @@ function Collect-IPProfile {
     }
 
     $sources = @(
-        Get-IpapiProfile -IP $IP,
-        Get-IpinfoProfile -IP $IP,
+        Get-IpapiProfile -IP $IP
+        Get-IpinfoProfile -IP $IP
         Get-IpwhoisProfile -IP $IP
     ) | Where-Object { $_ }
 
@@ -193,36 +193,61 @@ function Collect-IPProfile {
 function Format-ProfileTable {
     param([hashtable]$Profile)
 
+    function Format-BoolLabel {
+        param($Value)
+        if ($Value -eq $null) { return '未知' }
+        if ($Value -is [bool]) { return ($Value) ? '是' : '否' }
+        return [string]$Value
+    }
+
+    function Join-LocationParts {
+        param($Country,$Region,$City)
+        $parts = @()
+        if ($Country) { $parts += $Country }
+        if ($Region)  { $parts += $Region }
+        if ($City)    { $parts += $City }
+        if (-not $parts) { return '未知' }
+        return ($parts -join ' / ')
+    }
+
     $lines = @()
-    $lines += ('=' * 60)
-    $lines += "IP: {0}" -f $Profile.Address
-    $lines += "Time: {0}" -f $Profile.Timestamp
-    $lines += ('-' * 60)
+    $lines += ('═' * 66)
+    $lines += "公网 IP 画像： {0}" -f $Profile.Address
+    $lines += "报告时间：   {0}" -f $Profile.Timestamp
+    $lines += ('-' * 66)
 
     foreach ($src in $Profile.Sources) {
-        $lines += "[{0}]" -f $src.Provider
-        $lines += "  Country : {0}" -f ($src.Country -join ', ')
-        if ($src.Region)    { $lines += "  Region  : $($src.Region)" }
-        if ($src.City)      { $lines += "  City    : $($src.City)" }
-        if ($src.ASN)       { $lines += "  ASN/ISP : $($src.ASN)" }
-        if ($src.ISP -and -not $src.ASN) { $lines += "  ISP     : $($src.ISP)" }
-        if ($src.Location)  { $lines += "  Geo     : $($src.Location)" }
-        if ($src.Latitude -and $src.Longitude) {
-            $lines += "  Geo     : $($src.Latitude), $($src.Longitude)"
+        $lines += "[数据源] $($src.Provider)"
+
+        $location = Join-LocationParts -Country $src.Country -Region $src.Region -City $src.City
+        $lines += "  归属地    ： $location"
+
+        if ($src.ASN) {
+            $lines += "  ASN/ISP  ： $($src.ASN)"
+        } elseif ($src.ISP) {
+            $lines += "  运营商   ： $($src.ISP)"
         }
-        if ($src.Type)      { $lines += "  Type    : $($src.Type)" }
-        if ($src.Security)  { $lines += "  Security: $($src.Security)" }
-        if ($src.Risk)      { $lines += "  Risk    : $($src.Risk)" }
-        if ($src.RiskScore) { $lines += "  Risk    : $($src.RiskScore)" }
-        if ($src.VPN -ne $null) { $lines += "  VPN     : $($src.VPN)" }
-        if ($src.Proxy -ne $null) { $lines += "  Proxy   : $($src.Proxy)" }
-        if ($src.Hosting -ne $null) { $lines += "  Hosting : $($src.Hosting)" }
-        if ($src.Threats)   { $lines += "  Threats : $($src.Threats)" }
-        $lines += ('-' * 60)
+
+        if ($src.Location) {
+            $lines += "  经纬度    ： $($src.Location)"
+        } elseif ($src.Latitude -and $src.Longitude) {
+            $lines += "  经纬度    ： $($src.Latitude), $($src.Longitude)"
+        }
+
+        if ($src.Type)      { $lines += "  地址类型  ： $($src.Type)" }
+        if ($src.Security)  { $lines += "  安全标签  ： $($src.Security)" }
+        if ($src.Risk)      { $lines += "  风险等级  ： $($src.Risk)" }
+        if ($src.RiskScore) { $lines += "  风险分数  ： $($src.RiskScore)" }
+        if ($src.VPN -ne $null) { $lines += "  VPN 检测 ： $(Format-BoolLabel -Value $src.VPN)" }
+        if ($src.Proxy -ne $null) { $lines += "  代理检测 ： $(Format-BoolLabel -Value $src.Proxy)" }
+        if ($src.Hosting -ne $null) { $lines += "  数据中心 ： $(Format-BoolLabel -Value $src.Hosting)" }
+        if ($src.Threats)   { $lines += "  威胁情报  ： $($src.Threats)" }
+
+        $lines += ('-' * 66)
     }
 
     if (-not $Profile.Sources) {
-        $lines += "No data sources responded. Check your connectivity or proxy settings."
+        $lines += "未能从任何数据源获取信息，请检查网络或代理配置。"
     }
     return $lines -join [Environment]::NewLine
 }
